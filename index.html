@@ -90,8 +90,8 @@
                 </label>
                 <input type="file" id="csvFileInput" accept=".csv" class="hidden">
 
-                <!-- Reset to Sample Data Button -->
-                <button id="btnLoadSample" title="샘플 데이터로 재설정" class="bg-slate-100 hover:bg-slate-200 text-slate-600 p-2 rounded-lg transition border border-slate-300">
+                <!-- Reset to Default Data Button -->
+                <button id="btnLoadSample" title="기본 데이터로 재설정" class="bg-slate-100 hover:bg-slate-200 text-slate-600 p-2 rounded-lg transition border border-slate-300">
                     <i class="fa-solid fa-rotate-left"></i>
                 </button>
             </div>
@@ -214,13 +214,11 @@
 
         <!-- Answer Action Buttons -->
         <section class="w-full max-w-2xl mt-6 flex items-center justify-center gap-4">
-            <button id="btnAnswerO" class="flex-1 max-w-[200px] py-3.5 md:py-4 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-extrabold text-2xl md:text-3xl rounded-2xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center gap-2">
+            <button id="btnAnswerO" class="flex-1 max-w-[200px] py-3.5 md:py-4 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-extrabold text-2xl md:text-3xl rounded-2xl shadow-lg shadow-emerald-500/20 transition flex items-center justify-center">
                 <i class="fa-regular fa-circle text-2xl md:text-3xl"></i>
-                <span class="text-xl md:text-2xl font-bold">O</span>
             </button>
-            <button id="btnAnswerX" class="flex-1 max-w-[200px] py-3.5 md:py-4 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-extrabold text-2xl md:text-3xl rounded-2xl shadow-lg shadow-rose-500/20 transition flex items-center justify-center gap-2">
+            <button id="btnAnswerX" class="flex-1 max-w-[200px] py-3.5 md:py-4 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-extrabold text-2xl md:text-3xl rounded-2xl shadow-lg shadow-rose-500/20 transition flex items-center justify-center">
                 <i class="fa-solid fa-xmark text-2xl md:text-3xl"></i>
-                <span class="text-xl md:text-2xl font-bold">X</span>
             </button>
         </section>
 
@@ -252,7 +250,7 @@
     <!-- Footer -->
     <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-6">
         <div class="max-w-4xl mx-auto px-4">
-            <p>법률 조문 암기 플래시카드 앱 &bull; 학습 상태가 자동으로 보존됩니다.</p>
+            <p>법률 조문 암기 플래시카드 앱 &bull; 사용자 CSV 데이터 및 학습 상태가 자동으로 보존됩니다.</p>
         </div>
     </footer>
 
@@ -307,7 +305,7 @@
 
         window.onload = () => {
             initEvents();
-            autoLoadCSV();
+            loadApp();
         };
 
         function initEvents() {
@@ -322,13 +320,33 @@
             btnShuffle.addEventListener('click', shuffleCurrentDeck);
             btnFilterIncorrect.addEventListener('click', toggleFilterIncorrect);
             btnResetProgress.addEventListener('click', resetAllProgress);
-            btnLoadSample.addEventListener('click', loadSampleData);
+            btnLoadSample.addEventListener('click', resetToDefaultData);
             csvFileInput.addEventListener('change', handleFileUpload);
 
             document.addEventListener('keydown', handleKeyDown);
         }
 
-        // 로컬스토리지에 진행 상태 저장
+        // 앱 초기 로드: 사용자 저장 CSV가 있으면 먼저 읽고, 없으면 서버 CSV 로드
+        async function loadApp() {
+            const savedCSV = localStorage.getItem('customCSVData');
+            const savedName = localStorage.getItem('customCSVName');
+
+            if (savedCSV) {
+                const parsedData = parseCSV(savedCSV);
+                if (parsedData.length > 0) {
+                    masterDeck = parsedData;
+                    loadedFileName = savedName || '업로드한 CSV';
+                    dataStatus.textContent = `💾 저장된 ${loadedFileName} 로드됨 (${parsedData.length}문항)`;
+                    dataStatus.className = "text-xs text-emerald-600 font-semibold";
+                    applyDeck();
+                    return;
+                }
+            }
+
+            await autoLoadCSV();
+        }
+
+        // 학습 진행 상태 보존
         function saveProgress() {
             try {
                 const state = {
@@ -343,7 +361,6 @@
             }
         }
 
-        // 로컬스토리지에서 진행 상태 복원
         function loadSavedProgress() {
             try {
                 const saved = localStorage.getItem('lawQuizProgress');
@@ -513,7 +530,7 @@
                 isCorrect: isCorrect
             };
 
-            saveProgress(); // 답변을 누를 때마다 자동 저장
+            saveProgress();
             showResultBadge(isCorrect, selectedAns);
             updateStats();
             flipToBack();
@@ -554,7 +571,7 @@
         function goToPrevCard() {
             if (currentIndex > 0) {
                 currentIndex--;
-                saveProgress(); // 위치 이동 시 자동 저장
+                saveProgress();
                 renderCard();
             }
         }
@@ -562,7 +579,7 @@
         function goToNextCard() {
             if (currentIndex < currentDeck.length - 1) {
                 currentIndex++;
-                saveProgress(); // 위치 이동 시 자동 저장
+                saveProgress();
                 renderCard();
             }
         }
@@ -617,13 +634,13 @@
             }
         }
 
-        function loadSampleData() {
-            masterDeck = [...SAMPLE_DATA];
-            loadedFileName = 'sample';
-            dataStatus.textContent = "샘플 데이터 수동 로드";
-            dataStatus.className = "text-xs text-slate-500 font-medium";
-            localStorage.removeItem('lawQuizProgress');
-            applyDeck();
+        function resetToDefaultData() {
+            if (confirm("업로드한 CSV 데이터를 지우고 기본 파일로 되돌리시겠습니까?")) {
+                localStorage.removeItem('customCSVData');
+                localStorage.removeItem('customCSVName');
+                localStorage.removeItem('lawQuizProgress');
+                autoLoadCSV();
+            }
         }
 
         function handleFileUpload(e) {
@@ -649,9 +666,17 @@
                     return;
                 }
 
+                // 업로드된 CSV 텍스트 원본을 로컬스토리지에 저장하여 자동 복원 보장
+                try {
+                    localStorage.setItem('customCSVData', content);
+                    localStorage.setItem('customCSVName', file.name);
+                } catch (e) {
+                    console.warn("Localstorage CSV save failed due to size limit", e);
+                }
+
                 masterDeck = parsedData;
                 loadedFileName = file.name;
-                dataStatus.textContent = `${file.name} 수동 로드 완료 (${parsedData.length}문항)`;
+                dataStatus.textContent = `💾 저장됨: ${file.name} (${parsedData.length}문항)`;
                 dataStatus.className = "text-xs text-emerald-600 font-semibold";
                 localStorage.removeItem('lawQuizProgress');
                 applyDeck();
