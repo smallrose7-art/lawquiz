@@ -252,12 +252,11 @@
     <!-- Footer -->
     <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-6">
         <div class="max-w-4xl mx-auto px-4">
-            <p>법률 조문 암기 플래시카드 앱 &bull; CSV 데이터를 자동 로드하여 학습합니다.</p>
+            <p>법률 조문 암기 플래시카드 앱 &bull; 학습 상태가 자동으로 보존됩니다.</p>
         </div>
     </footer>
 
     <script>
-        // Default Sample Legal Cards (비상용 백업 샘플)
         const SAMPLE_DATA = [
             {
                 article: "민법 제107조(비진의표시): 의사표시는 표의자가 진의아님을 알고 한 것이라도 그 효력이 있다. 그러나 상대방이 표의자의 진의아님을 알았거나 이를 알 수 있었을 때에는 무효로 한다.",
@@ -271,18 +270,15 @@
             }
         ];
 
-        // App State Management
         let masterDeck = [...SAMPLE_DATA];
         let currentDeck = [...SAMPLE_DATA];
         let currentIndex = 0;
-        let userAnswers = {}; // Map of index -> { userAns, isCorrect }
+        let userAnswers = {}; 
         let isFlipped = false;
         let isFilterIncorrectOnly = false;
+        let loadedFileName = 'sample';
 
-        // DOM Elements
         const flashcard = document.getElementById('flashcard');
-        const cardFront = document.getElementById('cardFront');
-        const cardBack = document.getElementById('cardBack');
         const articleText = document.getElementById('articleText');
         const reasonText = document.getElementById('reasonText');
         const correctAnswerDisplay = document.getElementById('correctAnswerDisplay');
@@ -309,41 +305,79 @@
         const btnLoadSample = document.getElementById('btnLoadSample');
         const csvFileInput = document.getElementById('csvFileInput');
 
-        // Initialize App
         window.onload = () => {
             initEvents();
-            autoLoadCSV(); // 접속 시 CSV 파일 자동 불러오기 실행
+            autoLoadCSV();
         };
 
         function initEvents() {
-            // Button Answers
             btnAnswerO.addEventListener('click', () => handleAnswer('O'));
             btnAnswerX.addEventListener('click', () => handleAnswer('X'));
 
-            // Navigation
             btnPrev.addEventListener('click', goToPrevCard);
             btnNext.addEventListener('click', goToNextCard);
             btnToggleReason.addEventListener('click', toggleCardFlip);
             btnFlipBack.addEventListener('click', toggleCardFlip);
 
-            // Controls
             btnShuffle.addEventListener('click', shuffleCurrentDeck);
             btnFilterIncorrect.addEventListener('click', toggleFilterIncorrect);
             btnResetProgress.addEventListener('click', resetAllProgress);
             btnLoadSample.addEventListener('click', loadSampleData);
             csvFileInput.addEventListener('change', handleFileUpload);
 
-            // Keyboard Shortcuts
             document.addEventListener('keydown', handleKeyDown);
         }
 
-        // [핵심] 서버에 올려진 CSV 파일 자동 검색 및 로드 함수
+        // 로컬스토리지에 진행 상태 저장
+        function saveProgress() {
+            try {
+                const state = {
+                    fileName: loadedFileName,
+                    userAnswers: userAnswers,
+                    currentIndex: currentIndex,
+                    isFilterIncorrectOnly: isFilterIncorrectOnly
+                };
+                localStorage.setItem('lawQuizProgress', JSON.stringify(state));
+            } catch (e) {
+                console.error("Localstorage save failed", e);
+            }
+        }
+
+        // 로컬스토리지에서 진행 상태 복원
+        function loadSavedProgress() {
+            try {
+                const saved = localStorage.getItem('lawQuizProgress');
+                if (!saved) return false;
+
+                const state = JSON.parse(saved);
+                if (state.fileName === loadedFileName) {
+                    userAnswers = state.userAnswers || {};
+                    currentIndex = state.currentIndex || 0;
+                    if (state.isFilterIncorrectOnly) {
+                        isFilterIncorrectOnly = true;
+                        btnFilterIncorrect.classList.add('bg-amber-100', 'border-amber-300', 'text-amber-900');
+                        filterText.textContent = "전체 문제 보기";
+                        
+                        currentDeck = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }))
+                            .filter(card => {
+                                const rec = userAnswers[card.originalIndex];
+                                return rec && !rec.isCorrect;
+                            });
+                    }
+                    return true;
+                }
+            } catch (e) {
+                console.error("Localstorage load failed", e);
+            }
+            return false;
+        }
+
         async function autoLoadCSV() {
             const filesToTry = ['민법퀴즈_2.csv', '민법퀴즈.csv', 'quiz.csv'];
             
             for (const filename of filesToTry) {
                 try {
-                    const response = await fetch(filename + '?v=' + new Date().getTime()); // 캐시 방지
+                    const response = await fetch(filename + '?v=' + new Date().getTime());
                     if (response.ok) {
                         const buffer = await response.arrayBuffer();
                         const uint8Array = new Uint8Array(buffer);
@@ -359,6 +393,7 @@
 
                         if (parsedData.length > 0) {
                             masterDeck = parsedData;
+                            loadedFileName = filename;
                             dataStatus.textContent = `${filename} 로드 완료 (${parsedData.length}문항)`;
                             dataStatus.className = "text-xs text-emerald-600 font-semibold";
                             applyDeck();
@@ -370,20 +405,28 @@
                 }
             }
 
-            // 만약 서버의 CSV 파일을 못 찾은 경우 기본 샘플 로드
+            loadedFileName = 'sample';
             dataStatus.textContent = "기본 샘플 데이터 로드됨";
             dataStatus.className = "text-xs text-slate-500 font-medium";
             applyDeck();
         }
 
         function applyDeck() {
-            isFilterIncorrectOnly = false;
-            btnFilterIncorrect.classList.remove('bg-amber-100', 'border-amber-300', 'text-amber-900');
-            filterText.textContent = "틀린 문제만 보기";
+            const hasRestored = loadSavedProgress();
 
-            currentDeck = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }));
-            userAnswers = {};
-            currentIndex = 0;
+            if (!hasRestored) {
+                isFilterIncorrectOnly = false;
+                btnFilterIncorrect.classList.remove('bg-amber-100', 'border-amber-300', 'text-amber-900');
+                filterText.textContent = "틀린 문제만 보기";
+                currentDeck = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }));
+                userAnswers = {};
+                currentIndex = 0;
+            }
+
+            if (currentIndex >= currentDeck.length) {
+                currentIndex = 0;
+            }
+
             updateStats();
             renderCard();
         }
@@ -470,6 +513,7 @@
                 isCorrect: isCorrect
             };
 
+            saveProgress(); // 답변을 누를 때마다 자동 저장
             showResultBadge(isCorrect, selectedAns);
             updateStats();
             flipToBack();
@@ -510,6 +554,7 @@
         function goToPrevCard() {
             if (currentIndex > 0) {
                 currentIndex--;
+                saveProgress(); // 위치 이동 시 자동 저장
                 renderCard();
             }
         }
@@ -517,6 +562,7 @@
         function goToNextCard() {
             if (currentIndex < currentDeck.length - 1) {
                 currentIndex++;
+                saveProgress(); // 위치 이동 시 자동 저장
                 renderCard();
             }
         }
@@ -529,6 +575,7 @@
                 [currentDeck[i], currentDeck[j]] = [currentDeck[j], currentDeck[i]];
             }
             currentIndex = 0;
+            saveProgress();
             renderCard();
         }
 
@@ -553,11 +600,14 @@
             }
 
             currentIndex = 0;
+            saveProgress();
             renderCard();
         }
 
         function resetAllProgress() {
+            if (!confirm("모든 학습 기록(정답/오답)을 초기화하시겠습니까?")) return;
             userAnswers = {};
+            localStorage.removeItem('lawQuizProgress');
             updateStats();
             currentIndex = 0;
             if (isFilterIncorrectOnly) {
@@ -569,8 +619,10 @@
 
         function loadSampleData() {
             masterDeck = [...SAMPLE_DATA];
+            loadedFileName = 'sample';
             dataStatus.textContent = "샘플 데이터 수동 로드";
             dataStatus.className = "text-xs text-slate-500 font-medium";
+            localStorage.removeItem('lawQuizProgress');
             applyDeck();
         }
 
@@ -598,8 +650,10 @@
                 }
 
                 masterDeck = parsedData;
+                loadedFileName = file.name;
                 dataStatus.textContent = `${file.name} 수동 로드 완료 (${parsedData.length}문항)`;
                 dataStatus.className = "text-xs text-emerald-600 font-semibold";
+                localStorage.removeItem('lawQuizProgress');
                 applyDeck();
             };
             
