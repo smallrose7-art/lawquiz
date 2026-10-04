@@ -77,7 +77,7 @@
                 </div>
                 <div>
                     <h1 class="font-bold text-lg text-slate-900 leading-tight">법률 조문 O/X 암기장</h1>
-                    <p class="text-xs text-slate-500">EUC-KR & UTF-8 인코딩 자동 지원</p>
+                    <p id="dataStatus" class="text-xs text-brand-600 font-medium">데이터 로딩 중...</p>
                 </div>
             </div>
             
@@ -252,12 +252,12 @@
     <!-- Footer -->
     <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400 mt-6">
         <div class="max-w-4xl mx-auto px-4">
-            <p>법률 조문 암기 플래시카드 앱 &bull; CSV 데이터를 로컬 환경에서 직접 구동합니다.</p>
+            <p>법률 조문 암기 플래시카드 앱 &bull; CSV 데이터를 자동 로드하여 학습합니다.</p>
         </div>
     </footer>
 
     <script>
-        // Default Sample Legal Cards (민법 & 부동산/감정평가 관련 주요 조문)
+        // Default Sample Legal Cards (비상용 백업 샘플)
         const SAMPLE_DATA = [
             {
                 article: "민법 제107조(비진의표시): 의사표시는 표의자가 진의아님을 알고 한 것이라도 그 효력이 있다. 그러나 상대방이 표의자의 진의아님을 알았거나 이를 알 수 있었을 때에는 무효로 한다.",
@@ -268,21 +268,6 @@
                 article: "민법 제108조(통정한 허위의 의사표시): 상대방과 통정한 허위의 의사표시는 유효로 하되, 선의의 제3자에게만 단지 대항하지 못한다.",
                 answer: "X",
                 reason: "틀렸습니다. 통정한 허위의 의사표시는 당사자 사이에서 '무효'입니다. (민법 제108조 제1항: 상대방과 통정한 허위의 의사표시는 무효로 한다.)"
-            },
-            {
-                article: "민법 제111조(의사표시의 효력발생시기): 상대방이 있는 의사표시는 상대방에게 도달한 때에 그 효력이 생긴다.",
-                answer: "O",
-                reason: "맞습니다. 우리 민법은 상대방 있는 의사표시의 효력발생시기에 관하여 '도달주의'를 원칙으로 채택하고 있습니다."
-            },
-            {
-                article: "한정후견인은 피한정후견인의 모든 법률행위에 대해 원칙적으로 대리권과 동의권을 행사하여야 하며, 피한정후견인은 스스로 아무런 법률행위도 할 수 없다.",
-                answer: "X",
-                reason: "틀렸습니다. 한정후견은 원칙적으로 피한정후견인의 행위능력이 유지되며, 가정법원이 정한 특정 중요한 행위에 대해서만 동의를 받아야 합니다."
-            },
-            {
-                article: "민법 제103조(반사회질서의 법률행위): 선량한 풍속 기타 사회질서에 위반한 사항을 내용으로 하는 법률행위는 무효로 한다.",
-                answer: "O",
-                reason: "맞습니다. 반사회질서 법률행위는 절대적 무효에 해당합니다."
             }
         ];
 
@@ -302,6 +287,7 @@
         const reasonText = document.getElementById('reasonText');
         const correctAnswerDisplay = document.getElementById('correctAnswerDisplay');
         const resultBadge = document.getElementById('resultBadge');
+        const dataStatus = document.getElementById('dataStatus');
         
         const progressText = document.getElementById('progressText');
         const progressBar = document.getElementById('progressBar');
@@ -326,8 +312,7 @@
         // Initialize App
         window.onload = () => {
             initEvents();
-            renderCard();
-            updateStats();
+            autoLoadCSV(); // 접속 시 CSV 파일 자동 불러오기 실행
         };
 
         function initEvents() {
@@ -352,6 +337,57 @@
             document.addEventListener('keydown', handleKeyDown);
         }
 
+        // [핵심] 서버에 올려진 CSV 파일 자동 검색 및 로드 함수
+        async function autoLoadCSV() {
+            const filesToTry = ['민법퀴즈_2.csv', '민법퀴즈.csv', 'quiz.csv'];
+            
+            for (const filename of filesToTry) {
+                try {
+                    const response = await fetch(filename + '?v=' + new Date().getTime()); // 캐시 방지
+                    if (response.ok) {
+                        const buffer = await response.arrayBuffer();
+                        const uint8Array = new Uint8Array(buffer);
+                        
+                        let content = decodeText(uint8Array);
+                        let parsedData = parseCSV(content);
+
+                        if (parsedData.length === 0) {
+                            const decoderEucKr = new TextDecoder('euc-kr');
+                            content = decoderEucKr.decode(uint8Array);
+                            parsedData = parseCSV(content);
+                        }
+
+                        if (parsedData.length > 0) {
+                            masterDeck = parsedData;
+                            dataStatus.textContent = `${filename} 로드 완료 (${parsedData.length}문항)`;
+                            dataStatus.className = "text-xs text-emerald-600 font-semibold";
+                            applyDeck();
+                            return;
+                        }
+                    }
+                } catch (err) {
+                    console.log(`Failed to fetch ${filename}:`, err);
+                }
+            }
+
+            // 만약 서버의 CSV 파일을 못 찾은 경우 기본 샘플 로드
+            dataStatus.textContent = "기본 샘플 데이터 로드됨";
+            dataStatus.className = "text-xs text-slate-500 font-medium";
+            applyDeck();
+        }
+
+        function applyDeck() {
+            isFilterIncorrectOnly = false;
+            btnFilterIncorrect.classList.remove('bg-amber-100', 'border-amber-300', 'text-amber-900');
+            filterText.textContent = "틀린 문제만 보기";
+
+            currentDeck = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }));
+            userAnswers = {};
+            currentIndex = 0;
+            updateStats();
+            renderCard();
+        }
+
         function renderCard() {
             if (currentDeck.length === 0) {
                 articleText.textContent = "조건에 해당하는 카드가 없습니다.";
@@ -366,7 +402,6 @@
             btnAnswerO.disabled = false;
             btnAnswerX.disabled = false;
 
-            // Ensure card is showing front when rendering new index
             if (isFlipped) {
                 unflipCardSilently();
             }
@@ -384,7 +419,6 @@
                 correctAnswerDisplay.className = "text-2xl font-black text-rose-600";
             }
 
-            // Check if already answered
             const cardId = currentCard.originalIndex !== undefined ? currentCard.originalIndex : currentIndex;
             const pastAnswer = userAnswers[cardId];
             if (pastAnswer) {
@@ -393,11 +427,9 @@
                 resultBadge.className = "hidden";
             }
 
-            // Update Navigation states
             btnPrev.disabled = currentIndex === 0;
             btnNext.disabled = currentIndex === currentDeck.length - 1;
 
-            // Update Progress Bar
             const total = currentDeck.length;
             const currentNum = currentIndex + 1;
             progressText.textContent = `${currentNum} / ${total}`;
@@ -433,7 +465,6 @@
             
             const isCorrect = (selectedAns === actualAns);
 
-            // Record User Answer
             userAnswers[targetIndex] = {
                 userAns: selectedAns,
                 isCorrect: isCorrect
@@ -508,7 +539,6 @@
                 btnFilterIncorrect.classList.add('bg-amber-100', 'border-amber-300', 'text-amber-900');
                 filterText.textContent = "전체 문제 보기";
 
-                // Filter cards that user answered incorrectly
                 const filtered = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }))
                     .filter(card => {
                         const rec = userAnswers[card.originalIndex];
@@ -539,18 +569,11 @@
 
         function loadSampleData() {
             masterDeck = [...SAMPLE_DATA];
-            isFilterIncorrectOnly = false;
-            btnFilterIncorrect.classList.remove('bg-amber-100', 'border-amber-300', 'text-amber-900');
-            filterText.textContent = "틀린 문제만 보기";
-            
-            currentDeck = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }));
-            userAnswers = {};
-            currentIndex = 0;
-            updateStats();
-            renderCard();
+            dataStatus.textContent = "샘플 데이터 수동 로드";
+            dataStatus.className = "text-xs text-slate-500 font-medium";
+            applyDeck();
         }
 
-        // Automatic Encoding Detection & File Reader (EUC-KR / CP949 / UTF-8)
         function handleFileUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
@@ -560,58 +583,44 @@
                 const buffer = evt.target.result;
                 const uint8Array = new Uint8Array(buffer);
                 
-                // Detect encoding: check if UTF-8 or EUC-KR/CP949
                 let content = decodeText(uint8Array);
                 let parsedData = parseCSV(content);
 
-                // Fallback check if headers failed or broken characters exist
                 if (parsedData.length === 0) {
-                    // Try forced EUC-KR decoding
                     const decoderEucKr = new TextDecoder('euc-kr');
                     content = decoderEucKr.decode(uint8Array);
                     parsedData = parseCSV(content);
                 }
 
                 if (parsedData.length === 0) {
-                    alert("CSV 파일에서 올바른 데이터를 찾을 수 없습니다. 파일의 첫 행(열 이름)에 'article', 'answer', 'reason'이 포함되어 있는지 확인해 주세요.");
+                    alert("CSV 파일에서 올바른 데이터를 찾을 수 없습니다.");
                     return;
                 }
 
                 masterDeck = parsedData;
-                isFilterIncorrectOnly = false;
-                btnFilterIncorrect.classList.remove('bg-amber-100', 'border-amber-300', 'text-amber-900');
-                filterText.textContent = "틀린 문제만 보기";
-
-                currentDeck = masterDeck.map((card, idx) => ({ ...card, originalIndex: idx }));
-                userAnswers = {};
-                currentIndex = 0;
-                updateStats();
-                renderCard();
+                dataStatus.textContent = `${file.name} 수동 로드 완료 (${parsedData.length}문항)`;
+                dataStatus.className = "text-xs text-emerald-600 font-semibold";
+                applyDeck();
             };
             
             reader.readAsArrayBuffer(file);
             csvFileInput.value = '';
         }
 
-        // Smart Text Decoder for Korean Encoding
         function decodeText(uint8Array) {
-            // Check for UTF-8 BOM (0xEF, 0xBB, 0xBF)
             if (uint8Array.length >= 3 && uint8Array[0] === 0xEF && uint8Array[1] === 0xBB && uint8Array[2] === 0xBF) {
                 return new TextDecoder('utf-8').decode(uint8Array.subarray(3));
             }
 
-            // Test if valid UTF-8
             try {
                 const decoderUtf8 = new TextDecoder('utf-8', { fatal: true });
                 return decoderUtf8.decode(uint8Array);
             } catch (err) {
-                // If UTF-8 decoding fails, default to EUC-KR (CP949) for Excel Korean CSVs
                 const decoderEuc = new TextDecoder('euc-kr');
                 return decoderEuc.decode(uint8Array);
             }
         }
 
-        // Robust CSV Parser handling quotes, commas, multiline values
         function parseCSV(text) {
             const lines = [];
             let row = [];
@@ -625,7 +634,7 @@
                 if (c === '"') {
                     if (inQuotes && nextC === '"') {
                         entry += '"';
-                        i++; // Skip escaped quote
+                        i++;
                     } else {
                         inQuotes = !inQuotes;
                     }
@@ -653,7 +662,6 @@
 
             if (lines.length < 2) return [];
 
-            // Find column indices with case-insensitive and flexible naming
             const headers = lines[0].map(h => h.toLowerCase().trim());
             
             const articleIdx = headers.findIndex(h => h.includes('article') || h.includes('조문') || h.includes('내용') || h.includes('문제'));
