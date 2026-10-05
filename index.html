@@ -23,6 +23,7 @@
         .rotate-y-180 {
             transform: rotateY(180deg);
         }
+        /* Hide scrollbars gracefully for description text */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -45,16 +46,8 @@
             </div>
         </div>
 
-        <!-- Controls: Shuffle & Reset & Upload & Template Download -->
-        <div class="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
-            <button onclick="shuffleDeck()" title="현재 카드를 무작위로 섞습니다" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all border border-indigo-200 active:scale-95">
-                <i class="fa-solid fa-shuffle"></i>
-                <span>카드 섞기</span>
-            </button>
-            <button onclick="resetToDefaultDeck()" title="기본 문제 덱으로 초기화" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all border border-rose-200 active:scale-95">
-                <i class="fa-solid fa-rotate-left"></i>
-                <span>초기화</span>
-            </button>
+        <!-- Controls: Upload & Template Download -->
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
             <button onclick="downloadCSVTemplate()" title="CSV 템플릿 다운로드" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200">
                 <i class="fa-solid fa-file-csv text-indigo-600"></i>
                 <span>템플릿</span>
@@ -71,6 +64,7 @@
         
         <!-- Filter & Progress Container -->
         <div class="mb-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-3">
+            <!-- Filter Options -->
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-filter text-xs text-indigo-500"></i>
@@ -163,14 +157,13 @@
         </div>
     </main>
 
+    <!-- Footer -->
     <footer class="w-full max-w-2xl mx-auto mt-6 text-center text-xs text-slate-400">
         민법 OX 플래시카드 &copy; Smart Study App
     </footer>
 
     <script>
-        const STORAGE_KEY_DECK = "civil_law_quiz_deck";
-        const STORAGE_KEY_ANSWERS = "civil_law_quiz_answers";
-
+        // 기본 덱 데이터 (민법 핵심 판례 예시)
         const defaultDeck = [
             {
                 id: 1,
@@ -204,13 +197,14 @@
             }
         ];
 
-        let rawDeck = loadStoredDeck();
-        let currentDeck = [...rawDeck];
+        let rawDeck = [...defaultDeck]; // 전체 데이터 원본
+        let currentDeck = [...defaultDeck]; // 필터 적용된 데이터
         let currentIndex = 0;
         let isFlipped = false;
-        let currentFilter = 'ALL';
-        const userAnswers = loadStoredAnswers();
+        let currentFilter = 'ALL'; // 'ALL', 'INCORRECT', 'UNANSWERED'
+        const userAnswers = {}; // { [cardKey]: { isCorrect: boolean, userAns: 'O'|'X' } }
 
+        // DOM Elements
         const flashcard = document.getElementById('flashcard');
         const cardContainer = document.getElementById('cardContainer');
         const articleText = document.getElementById('articleText');
@@ -225,75 +219,11 @@
         const btnPrev = document.getElementById('btnPrev');
         const btnNext = document.getElementById('btnNext');
 
-        function loadStoredDeck() {
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY_DECK);
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-                }
-            } catch(e) {
-                console.error("저장된 문제 덱 로드 실패:", e);
-            }
-            return [...defaultDeck];
-        }
-
-        function loadStoredAnswers() {
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY_ANSWERS);
-                if (saved) return JSON.parse(saved);
-            } catch(e) {
-                console.error("저장된 답안 히스토리 로드 실패:", e);
-            }
-            return {};
-        }
-
-        function saveDeckToStorage() {
-            try {
-                localStorage.setItem(STORAGE_KEY_DECK, JSON.stringify(rawDeck));
-            } catch(e) {
-                console.error("문제 덱 저장 실패:", e);
-            }
-        }
-
-        function saveAnswersToStorage() {
-            try {
-                localStorage.setItem(STORAGE_KEY_ANSWERS, JSON.stringify(userAnswers));
-            } catch(e) {
-                console.error("답안 히스토리 저장 실패:", e);
-            }
-        }
-
-        function resetToDefaultDeck() {
-            if (confirm("업로드한 문제와 풀이 기록을 모두 초기화하고 기본 5개 문제 덱으로 되돌리시겠습니까?")) {
-                localStorage.removeItem(STORAGE_KEY_DECK);
-                localStorage.removeItem(STORAGE_KEY_ANSWERS);
-                rawDeck = [...defaultDeck];
-                for (let key in userAnswers) delete userAnswers[key];
-                setFilter('ALL');
-            }
-        }
-
-        // 카드 무작위 셔플 (Fisher-Yates 알고리즘)
-        function shuffleDeck() {
-            if (currentDeck.length <= 1) {
-                alert("섞을 카드가 2개 이상이어야 합니다.");
-                return;
-            }
-
-            for (let i = currentDeck.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [currentDeck[i], currentDeck[j]] = [currentDeck[j], currentDeck[i]];
-            }
-
-            currentIndex = 0;
-            renderCard();
-        }
-
         function getCardKey(card) {
             return card.id || `card-${card.article}`;
         }
 
+        // 카드 뒤집기 토글
         cardContainer.addEventListener('click', (e) => {
             if (e.target.closest('button')) return;
 
@@ -392,7 +322,6 @@
 
             const key = getCardKey(currentCard);
             userAnswers[key] = { isCorrect, userAns };
-            saveAnswersToStorage();
 
             showResultBadge(isCorrect, userAns);
 
@@ -423,7 +352,6 @@
             const currentCard = currentDeck[currentIndex];
             const key = getCardKey(currentCard);
             delete userAnswers[key];
-            saveAnswersToStorage();
             renderCard();
         }
 
@@ -479,6 +407,7 @@
             document.getElementById('countUnanswered').textContent = unansCount;
         }
 
+        // CSV 업로드 파싱 로직 (인코딩 자동 감지 적용)
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -488,17 +417,16 @@
                 const buffer = e.target.result;
                 let text = "";
 
-                try {
-                    const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
-                    text = utf8Decoder.decode(buffer);
-                } catch (err) {
-                    try {
-                        const eucKrDecoder = new TextDecoder('euc-kr');
-                        text = eucKrDecoder.decode(buffer);
-                    } catch (eucErr) {
-                        const ansiDecoder = new TextDecoder('iso-8859-1');
-                        text = ansiDecoder.decode(buffer);
-                    }
+                // UTF-8 디코딩 시도
+                const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+                const utf8Text = utf8Decoder.decode(buffer);
+
+                // UTF-8 디코딩 결과에 손상 문자(\uFFFD)가 포함되어 있으면 EUC-KR / CP949 (Windows ANSI)로 재시도
+                if (utf8Text.includes('\uFFFD')) {
+                    const eucKrDecoder = new TextDecoder('euc-kr');
+                    text = eucKrDecoder.decode(buffer);
+                } else {
+                    text = utf8Text;
                 }
 
                 parseCSVData(text);
@@ -519,6 +447,7 @@
                 const tokens = parseCSVLine(line);
                 if (tokens.length < 2) continue;
 
+                // 헤더 검사
                 if (isHeader && (tokens[0].includes("지문") || tokens[0].includes("question") || tokens[0].toLowerCase().includes("article"))) {
                     isHeader = false;
                     continue;
@@ -542,17 +471,14 @@
             if (parsed.length > 0) {
                 rawDeck = parsed;
                 for (let key in userAnswers) delete userAnswers[key];
-                
-                saveDeckToStorage();
-                saveAnswersToStorage();
-
                 setFilter('ALL');
-                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔으며 브라우저에 자동 저장되었습니다!`);
+                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔습니다!`);
             } else {
                 alert("CSV 파일에서 유효한 문제 데이터를 찾지 못했습니다. 템플릿 양식을 확인해 주세요.");
             }
         }
 
+        // CSV/TSV 구분자 및 큰따옴표 파싱 헬퍼
         function parseCSVLine(text) {
             const delimiter = text.includes('\t') ? '\t' : ',';
             const result = [];
@@ -574,6 +500,7 @@
             return result.map(str => str.replace(/^"|"$/g, '').replace(/""/g, '"'));
         }
 
+        // CSV 템플릿 다운로드
         function downloadCSVTemplate() {
             const csvContent = "\uFEFF지문,정답,해설\n" +
                 "\"독립한 부동산은 종물이 될 수 없다.\",X,\"독립된 건물이라도 주물의 효용을 돕는다면 종물이 될 수 있습니다.\"\n" +
@@ -590,6 +517,7 @@
             document.body.removeChild(link);
         }
 
+        // 초기 시작
         renderCard();
     </script>
 </body>
