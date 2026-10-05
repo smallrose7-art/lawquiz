@@ -12,11 +12,12 @@ function renderCard() {
     btnAnswerO.disabled = false;
     btnAnswerX.disabled = false;
 
-    // 카드가 뒤집혀 있는 상태라면 애니메이션 없이 즉시 앞면으로 돌린 후 데이터를 변경합니다.
+    // 1. 카드가 뒤집혀 있다면 먼저 '빈 내용'으로 보이지 않게 처리 후 앞면으로 복귀
     if (isFlipped) {
         unflipCardSilently();
     }
 
+    // 2. 앞면으로 완전히 돌아온 후 데이터를 세팅 (답 스포일러 완벽 방지)
     const currentCard = currentDeck[currentIndex];
     articleText.textContent = currentCard.article || "조문 내용이 없습니다.";
     reasonText.textContent = currentCard.reason || "상세 사유가 없습니다.";
@@ -50,11 +51,15 @@ function renderCard() {
 function unflipCardSilently() {
     isFlipped = false;
     
-    // 트랜지션을 잠깐 끄고 뒤집기 회전을 즉시 해제하여 0.1초 잔상을 방지
+    // 카드가 돌아갈 때 뒷면 텍스트를 순간적으로 숨겨 스포일러 방지
+    correctAnswerDisplay.textContent = "";
+    reasonText.textContent = "";
+
+    // 트랜지션을 끄고 즉시 앞면 상태로 리셋
     flashcard.style.transition = 'none';
     flashcard.classList.remove('rotate-y-180');
     
-    // 리플로우(Reflow) 강제 실행 후 다시 트랜지션 복원
+    // DOM 리플로우 강제 후 트랜지션 원복
     void flashcard.offsetHeight;
     flashcard.style.transition = '';
 }
