@@ -23,7 +23,6 @@
         .rotate-y-180 {
             transform: rotateY(180deg);
         }
-        /* Hide scrollbars gracefully for description text */
         .no-scrollbar::-webkit-scrollbar {
             display: none;
         }
@@ -46,8 +45,16 @@
             </div>
         </div>
 
-        <!-- Controls: Upload & Template Download -->
-        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <!-- Controls: Shuffle, Reset, CSV Upload, Template Download -->
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+            <button onclick="shuffleDeck()" title="현재 카드를 무작위로 섞습니다" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-xl transition-all border border-indigo-200 active:scale-95">
+                <i class="fa-solid fa-shuffle"></i>
+                <span>카드 섞기</span>
+            </button>
+            <button onclick="resetToDefaultDeck()" title="기본 문제 덱으로 초기화" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all border border-rose-200 active:scale-95">
+                <i class="fa-solid fa-rotate-left"></i>
+                <span>초기화</span>
+            </button>
             <button onclick="downloadCSVTemplate()" title="CSV 템플릿 다운로드" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200">
                 <i class="fa-solid fa-file-csv text-indigo-600"></i>
                 <span>템플릿</span>
@@ -64,7 +71,6 @@
         
         <!-- Filter & Progress Container -->
         <div class="mb-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-3">
-            <!-- Filter Options -->
             <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-filter text-xs text-indigo-500"></i>
@@ -157,54 +163,86 @@
         </div>
     </main>
 
-    <!-- Footer -->
     <footer class="w-full max-w-2xl mx-auto mt-6 text-center text-xs text-slate-400">
         민법 OX 플래시카드 &copy; Smart Study App
     </footer>
 
     <script>
-        // 기본 덱 데이터 (민법 핵심 판례 예시)
+        const STORAGE_KEY_DECK = "civil_law_quiz_deck_v3";
+        const STORAGE_KEY_ANSWERS = "civil_law_quiz_answers_v3";
+
+        // 61개 문항 기본 내장 데이터
         const defaultDeck = [
-            {
-                id: 1,
-                article: "독립한 부동산은 종물이 될 수 없다.",
-                answer: "X",
-                reason: "독립한 부동산(예: 별개의 건물)이라 하더라도 주물의 효용을 돕는 관계에 있다면 종물이 될 수 있습니다 (예: 독립된 창고, 정화조 시설 등)."
-            },
-            {
-                id: 2,
-                article: "구분건물의 전유부분에 대한 가압류 결정의 효력은 특별한 사정이 없는 한 그 대지권에 미치지 않는다.",
-                answer: "X",
-                reason: "대지사용권(대지권)은 전유부분의 종된 권리이므로 전유부분에 대한 가압류나 저당권의 효력은 당연히 대지권에도 미칩니다."
-            },
-            {
-                id: 3,
-                article: "부첩관계의 종료를 해제조건으로 하는 증여계약은 그 조건뿐만 아니라 그 계약자체도 무효이다.",
-                answer: "O",
-                reason: "부첩관계를 끝내면 증여를 취소한다는 조건은 불륜 관계 유지를 강요하는 불법조건이므로 조건뿐만 아니라 계약 전체가 무효가 됩니다."
-            },
-            {
-                id: 4,
-                article: "이중매매임을 알고 부동산을 매수한 것만으로 제2매매가 사회질서에 반하여 무효인 것은 아니다.",
-                answer: "O",
-                reason: "단순히 이중매매임을 알고 매수한(단순 악의) 것만으로는 무효가 되지 않으며, 제2매수인이 매도인의 배임행위에 '적극 가담'해야 무효가 됩니다."
-            },
-            {
-                id: 5,
-                article: "통정허위표시에 의한 급부는 특별한 사정이 없는 한 불법원인급여이다.",
-                answer: "X",
-                reason: "통정허위표시는 무효일 뿐 반사회질서 행위(민법 제103조)까지는 아니므로 불법원인급여가 아닙니다. 따라서 당사자 간 부당이득반환청구가 가능합니다."
-            }
+            { id: 1, article: "헌법의 기본권은 특별한 사정이 없으면 사법관계에 직접 적용된다", answer: "X", reason: "간접적으로 적용된다" },
+            { id: 2, article: "관습법에 앞서 적용되는 법률이란 국회에서 제정된 법률만을 말한다", answer: "X", reason: "민법 제1조의 '법률'은 국회 제정 법률뿐만 아니라 명령·규칙·조례·조약 등 모든 성문법령을 의미" },
+            { id: 3, article: "대법원이 정한 공탁규칙은 민법의 법원이 될 수 없다", answer: "X", reason: "공탁규칙은 성문법령으로 민법의 법원임" },
+            { id: 4, article: "관습법에 의한 분묘기지권은 더 이상 인정되지 않는다", answer: "X", reason: "인정된다" },
+            { id: 5, article: "무권대리인이 무권대리행위 후 단독으로 본인의 지위를 상속한 경우, 본인의 지위에서 그 무권대리행위의 추인을 거절하는 것은 신의칙에 반한다", answer: "O", reason: "신의칙상 허용되지 않는다" },
+            { id: 6, article: "미성년자가 법정대리인의 동의 없이 한 법률행위는 법정대리인만이 취소할 수 있다", answer: "X", reason: "미성년자 본인도 취소할 수 있다" },
+            { id: 7, article: "미성년자의 법정대리인은 미성년자의 영업에 대한 허락을 언제든지 취소할 수 있다", answer: "O", reason: "취소할 수 있다" },
+            { id: 8, article: "피성년후견인이 체결한 모든 계약은 예외 없이 취소할 수 있다", answer: "X", reason: "일상생활에 필요한 물건의 구입 등은 취소할 수 없다" },
+            { id: 9, article: "한정후견개시의 심판이 있으면 피한정후견인의 법률행위는 원칙적으로 취소할 수 있다", answer: "X", reason: "피한정후견인은 원칙적으로 완전한 행위능력자이다" },
+            { id: 10, article: "피성년후견인은 성년후견인의 동의를 얻어 법률행위를 할 수 있다", answer: "X", reason: "동의를 얻어 하더라도 취소할 수 있는 것이 원칙이다" },
+            { id: 11, article: "실종선고가 취소되면 실종선고를 원인으로 한 법률행위는 항상 원래대로 복귀한다", answer: "X", reason: "선고를 원인으로 한 권리 취득자가 선의인 경우 영향을 미치지 않는다" },
+            { id: 12, article: "부동산의 종물은 주물과 함께 처분되는 것이 원칙이다", answer: "O", reason: "종물은 주물의 처분에 따른다" },
+            { id: 13, article: "천연과실은 수취할 권원의 존부와 상관없이 원물로부터 분리하는 때에 이를 수취할 자에게 속한다", answer: "X", reason: "수취할 권원이 있는 자에게 속한다" },
+            { id: 14, article: "건물은 토지의 일부로 취급된다", answer: "X", reason: "건물은 토지와 별개의 독립된 부동산이다" },
+            { id: 15, article: "주물의 소유자가 아닌 자 소유의 물건은 종물이 될 수 없다", answer: "O", reason: "타인 소유 물건은 종물이 될 수 없다" },
+            { id: 16, article: "명인방법을 갖춘 미분리 과실은 독립한 소유권의 객체가 된다", answer: "O", reason: "독립한 부동산으로 다루어진다" },
+            { id: 17, article: "반사회질서의 법률행위는 당사자가 무효임을 알고 추인하면 유효가 된다", answer: "X", reason: "103조 무효는 추인해도 유효가 될 수 없다" },
+            { id: 18, article: "강박에 의한 법률행위는 반사회질서의 법률행위로서 무효이다", answer: "X", reason: "강박은 취소할 수 있는 법률행위일 뿐 원칙적으로 무효는 아니다" },
+            { id: 19, article: "불공정한 법률행위(제104조)는 무효행위의 전환이 인정될 수 없다", answer: "X", reason: "무효행위 전환은 인정된다" },
+            { id: 20, article: "통정허위표시의 무효로 대항할 수 없는 제3자는 선의이면 족하고 무과실까지 요하지 않는다", answer: "O", reason: "선의이기만 하면 된다" },
+            { id: 21, article: "착오가 표의자의 중대한 과실로 인한 때에는 상대방이 표의자의 착오를 알고 이용한 경우에도 취소할 수 없다", answer: "X", reason: "상대방이 알고 이용한 경우에는 표의자에게 중과실이 있어도 취소할 수 있다" },
+            { id: 22, article: "사기에 의한 법률행위는 상대방이 표의자에게 사기친 경우에만 취소할 수 있다", answer: "X", reason: "제3자의 사기인 경우에도 상대방이 알았거나 알 수 있었을 때 취소할 수 있다" },
+            { id: 23, article: "의사표시자가 통지를 발송한 후 사망하거나 제한능력자가 되어도 의사표시의 효력에 영향을 미치지 않는다", answer: "O", reason: "민법 제111조 제2항" },
+            { id: 24, article: "상대방 있는 의사표시는 상대방에게 도달한 때에 효력이 생긴다", answer: "O", reason: "도달주의 원칙" },
+            { id: 25, article: "대리인은 성년자이어야 한다", answer: "X", reason: "대리인은 제한능력자이어도 된다(민법 제117조)" },
+            { id: 26, article: "대리인이 본인을 위한 것임을 표시하지 않은 경우 그 의사표시는 대리인 자신을 위한 것으로 본다", answer: "O", reason: "민법 제115조 본문" },
+            { id: 27, article: "복대리인은 대리인이 자신의 이름으로 선임한 본인의 대리인이다", answer: "O", reason: "복대리인은 본인의 대리인이다" },
+            { id: 28, article: "무권대리행위는 본인이 추인하지 않으면 본인에 대하여 효력이 없다", answer: "O", reason: "무효이다" },
+            { id: 29, article: "무권대리의 상대방은 선의인 경우에만 철회권을 행사할 수 있다", answer: "O", reason: "악의의 상대방은 철회권이 없다" },
+            { id: 30, article: "법정대리인은 언제든지 복대리인을 선임할 수 있다", answer: "O", reason: "법정대리인은 자기 책임으로 복대리인을 선임할 수 있다" },
+            { id: 31, article: "조건이 법률행위 당시 이미 성취된 경우, 그 조건이 해제조건이면 조건 없는 법률행위가 된다", answer: "X", reason: "기성조건이 해제조건이면 그 법률행위는 무효이다" },
+            { id: 32, article: "조건 성취의 효력은 원칙적으로 소급한다", answer: "X", reason: "조건 성취 효력은 비소급이 원칙이다" },
+            { id: 33, article: "기한은 채권자의 이익을 위한 것으로 추정한다", answer: "X", reason: "채무자의 이익을 위한 것으로 추정한다" },
+            { id: 34, article: "불법조건이 붙은 법률행위는 그 조건만 무효가 된다", answer: "X", reason: "법률행위 전체가 무효가 된다" },
+            { id: 35, article: "시기(始期) 있는 법률행위는 기한이 도래한 때로부터 그 효력을 잃는다", answer: "X", reason: "효력이 생긴다" },
+            { id: 36, article: "소멸시효 완성의 효력은 시효기간이 만료한 때부터 발생한다", answer: "X", reason: "기산일에 소급하여 효력이 생긴다" },
+            { id: 37, article: "소멸시효의 중단효력은 당사자 및 그 승계인간에만 미친다", answer: "O", reason: "상대적 효력이 원칙이다" },
+            { id: 38, article: "주채무자에 대한 시효중단은 보증인에 대하여 효력이 없다", answer: "X", reason: "보증인에게도 시효중단의 효력이 미친다" },
+            { id: 39, article: "소멸시효는 법률행위에 의하여 이를 단축하거나 경감할 수 없다", answer: "X", reason: "단축하거나 경감할 수 있으나, 배제·연장·중화할 수 없다" },
+            { id: 40, article: "소멸시효 이익은 시효완성 전에는 포기할 수 없다", answer: "O", reason: "완성 전 포기는 불허한다" },
+            { id: 41, article: "소멸시효 완성 후 채무를 승인하면 시효이익의 포기로 추정된다", answer: "O", reason: "시효완성 후 승인은 포기로 추정한다" },
+            { id: 42, article: "제척기간에는 중단이나 정지 제도가 적용되지 않는다", answer: "O", reason: "제척기간은 중단·정지가 없다" },
+            { id: 43, article: "법원은 당사자의 주장이 없어도 제척기간 경과 여부를 직권으로 조사하여야 한다", answer: "O", reason: "제척기간은 직권조사사항이다" },
+            { id: 44, article: "채권은 10년간 행사하지 아니하면 소멸시효가 완성한다", answer: "O", reason: "일반 채권 소멸시효는 10년이다" },
+            { id: 45, article: "판결에 의하여 확정된 채권은 단기소멸시효에 해당하는 것이라도 소멸시효가 10년으로 연장된다", answer: "O", reason: "민법 제165조 제1항" },
+            { id: 46, article: "물권은 법률 또는 관습법에 의하는 외에는 임의로 창설하지 못한다", answer: "O", reason: "물권법정주의(민법 제185조)" },
+            { id: 47, article: "부동산 물권변동은 등기하지 않아도 효력이 발생하는 것이 원칙이다", answer: "X", reason: "등기해야 효력이 발생하는 성립요건주의가 원칙이다" },
+            { id: 48, article: "동산의 양도인이 그 동산을 계속 점유하는 경우에도 점유개정에 의한 선의취득이 인정된다", answer: "X", reason: "점유개정에 의한 선의취득은 인정되지 않는다" },
+            { id: 49, article: "점유권은 물건을 사실상 지배하는 자에게 인정되는 물권이다", answer: "O", reason: "민법 제192조 제1항" },
+            { id: 50, article: "점유자의 점유는 자주점유로 추정된다", answer: "O", reason: "민법 제197조 제1항" },
+            { id: 51, article: "부동산의 점유취득시효기간은 10년이다", answer: "X", reason: "20년이다" },
+            { id: 52, article: "등기부취득시효의 기간은 10년이다", answer: "O", reason: "등기부취득시효는 10년이다" },
+            { id: 53, article: "공유물에 대한 변경 및 처분은 공유자 지분의 과반수로 결정한다", answer: "X", reason: "공유자 전원의 동의가 필요하다" },
+            { id: 54, article: "공유물의 관리행위는 지분의 과반수로 결정한다", answer: "O", reason: "지분의 과반수로 결정한다" },
+            { id: 55, article: "공유물의 보존행위는 각 공유자가 단독으로 할 수 있다", answer: "O", reason: "각 공유자가 단독으로 할 수 있다" },
+            { id: 56, article: "지상권은 타인의 토지에 건물 기타 공작물이나 수목을 소유하기 위하여 그 토지를 사용하는 권리이다", answer: "O", reason: "민법 제279조" },
+            { id: 57, article: "지상권의 양도는 유효하나 지상권 설정자의 동의를 얻어야 한다", answer: "X", reason: "지상권자는 설정자의 동의 없이 자유롭게 양도할 수 있다" },
+            { id: 58, article: "전세권자는 전세금을 지급하고 타인의 부동산을 점유하여 그 부동산의 용도에 따라 사용·수익하는 권리가 있다", answer: "O", reason: "민법 제303조 제1항" },
+            { id: 59, article: "저당권은 목적물의 점유를 요건으로 한다", answer: "X", reason: "저당권은 점유를 이전하지 않는다" },
+            { id: 60, article: "유치권자는 목적물을 사용·수익할 권리가 있는 것이 원칙이다", answer: "X", reason: "채무자의 승낙 없이 사용·수익할 수 없는 것이 원칙이다" },
+            { id: 61, article: "가장의 채권양도 후 채무가 변제되지 않고 있는 동안 채권양도가 허위임이 밝혀진 경우에 있어서는 채무자는 통정허위표시에 의하여 외형상 형성된 법률관계를 기초로 하여 새로운 법률상 이해관계를 맺은 제3자에 해당하지 않는다.", answer: "O", reason: "원래부터 빚을 지고 있던 채무자는 가짜 채권양도가 일어났다고 해서 새로 거래를 한 사람이 아니므로, 보호받는 제3자가 아니다" }
         ];
 
-        let rawDeck = [...defaultDeck]; // 전체 데이터 원본
-        let currentDeck = [...defaultDeck]; // 필터 적용된 데이터
+        let rawDeck = loadStoredDeck();
+        let currentDeck = [...rawDeck];
         let currentIndex = 0;
         let isFlipped = false;
-        let currentFilter = 'ALL'; // 'ALL', 'INCORRECT', 'UNANSWERED'
-        const userAnswers = {}; // { [cardKey]: { isCorrect: boolean, userAns: 'O'|'X' } }
+        let currentFilter = 'ALL';
+        const userAnswers = loadStoredAnswers();
 
-        // DOM Elements
         const flashcard = document.getElementById('flashcard');
         const cardContainer = document.getElementById('cardContainer');
         const articleText = document.getElementById('articleText');
@@ -219,11 +257,77 @@
         const btnPrev = document.getElementById('btnPrev');
         const btnNext = document.getElementById('btnNext');
 
+        function loadStoredDeck() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY_DECK);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                }
+            } catch(e) {
+                console.error("저장된 문제 덱 로드 실패:", e);
+            }
+            return [...defaultDeck];
+        }
+
+        function loadStoredAnswers() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY_ANSWERS);
+                if (saved) return JSON.parse(saved);
+            } catch(e) {
+                console.error("저장된 답안 히스토리 로드 실패:", e);
+            }
+            return {};
+        }
+
+        function saveDeckToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_DECK, JSON.stringify(rawDeck));
+            } catch(e) {
+                console.error("문제 덱 저장 실패:", e);
+            }
+        }
+
+        function saveAnswersToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_ANSWERS, JSON.stringify(userAnswers));
+            } catch(e) {
+                console.error("답안 히스토리 저장 실패:", e);
+            }
+        }
+
+        function resetToDefaultDeck() {
+            if (confirm("기본 61개 문제 덱으로 초기화하고 풀이 기록을 지우시겠습니까?")) {
+                localStorage.removeItem(STORAGE_KEY_DECK);
+                localStorage.removeItem(STORAGE_KEY_ANSWERS);
+                rawDeck = [...defaultDeck];
+                for (let key in userAnswers) delete userAnswers[key];
+                saveDeckToStorage();
+                saveAnswersToStorage();
+                setFilter('ALL');
+            }
+        }
+
+        // 🎲 Fisher-Yates 카드 셔플 함수
+        function shuffleDeck() {
+            if (currentDeck.length <= 1) {
+                alert("섞을 카드가 2개 이상이어야 합니다.");
+                return;
+            }
+
+            for (let i = currentDeck.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [currentDeck[i], currentDeck[j]] = [currentDeck[j], currentDeck[i]];
+            }
+
+            currentIndex = 0;
+            renderCard();
+        }
+
         function getCardKey(card) {
             return card.id || `card-${card.article}`;
         }
 
-        // 카드 뒤집기 토글
         cardContainer.addEventListener('click', (e) => {
             if (e.target.closest('button')) return;
 
@@ -322,6 +426,7 @@
 
             const key = getCardKey(currentCard);
             userAnswers[key] = { isCorrect, userAns };
+            saveAnswersToStorage();
 
             showResultBadge(isCorrect, userAns);
 
@@ -352,6 +457,7 @@
             const currentCard = currentDeck[currentIndex];
             const key = getCardKey(currentCard);
             delete userAnswers[key];
+            saveAnswersToStorage();
             renderCard();
         }
 
@@ -407,7 +513,6 @@
             document.getElementById('countUnanswered').textContent = unansCount;
         }
 
-        // CSV 업로드 파싱 로직 (인코딩 자동 감지 적용)
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -417,16 +522,17 @@
                 const buffer = e.target.result;
                 let text = "";
 
-                // UTF-8 디코딩 시도
-                const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
-                const utf8Text = utf8Decoder.decode(buffer);
-
-                // UTF-8 디코딩 결과에 손상 문자(\uFFFD)가 포함되어 있으면 EUC-KR / CP949 (Windows ANSI)로 재시도
-                if (utf8Text.includes('\uFFFD')) {
-                    const eucKrDecoder = new TextDecoder('euc-kr');
-                    text = eucKrDecoder.decode(buffer);
-                } else {
-                    text = utf8Text;
+                try {
+                    const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+                    text = utf8Decoder.decode(buffer);
+                } catch (err) {
+                    try {
+                        const eucKrDecoder = new TextDecoder('euc-kr');
+                        text = eucKrDecoder.decode(buffer);
+                    } catch (eucErr) {
+                        const ansiDecoder = new TextDecoder('iso-8859-1');
+                        text = ansiDecoder.decode(buffer);
+                    }
                 }
 
                 parseCSVData(text);
@@ -447,7 +553,6 @@
                 const tokens = parseCSVLine(line);
                 if (tokens.length < 2) continue;
 
-                // 헤더 검사
                 if (isHeader && (tokens[0].includes("지문") || tokens[0].includes("question") || tokens[0].toLowerCase().includes("article"))) {
                     isHeader = false;
                     continue;
@@ -471,14 +576,17 @@
             if (parsed.length > 0) {
                 rawDeck = parsed;
                 for (let key in userAnswers) delete userAnswers[key];
+                
+                saveDeckToStorage();
+                saveAnswersToStorage();
+
                 setFilter('ALL');
-                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔습니다!`);
+                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔으며 브라우저에 자동 저장되었습니다!`);
             } else {
                 alert("CSV 파일에서 유효한 문제 데이터를 찾지 못했습니다. 템플릿 양식을 확인해 주세요.");
             }
         }
 
-        // CSV/TSV 구분자 및 큰따옴표 파싱 헬퍼
         function parseCSVLine(text) {
             const delimiter = text.includes('\t') ? '\t' : ',';
             const result = [];
@@ -500,7 +608,6 @@
             return result.map(str => str.replace(/^"|"$/g, '').replace(/""/g, '"'));
         }
 
-        // CSV 템플릿 다운로드
         function downloadCSVTemplate() {
             const csvContent = "\uFEFF지문,정답,해설\n" +
                 "\"독립한 부동산은 종물이 될 수 없다.\",X,\"독립된 건물이라도 주물의 효용을 돕는다면 종물이 될 수 있습니다.\"\n" +
@@ -517,7 +624,6 @@
             document.body.removeChild(link);
         }
 
-        // 초기 시작
         renderCard();
     </script>
 </body>
