@@ -56,7 +56,7 @@
                 <i class="fa-solid fa-file-import"></i>
                 <span>CSV 업로드</span>
             </label>
-            <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleCSVUpload(event)">
+            <input type="file" id="csvFileInput" accept=".csv, .tsv, .txt" class="hidden" onchange="handleCSVUpload(event)">
         </div>
     </header>
 
@@ -225,7 +225,6 @@
 
         // 카드 뒤집기 토글
         cardContainer.addEventListener('click', (e) => {
-            // 버튼 클릭 시에는 뒤집히지 않도록
             if (e.target.closest('button')) return;
 
             isFlipped = !isFlipped;
@@ -257,12 +256,10 @@
             btnAnswerO.disabled = false;
             btnAnswerX.disabled = false;
 
-            // 1. 카드가 뒤집혀 있는 상태라면 0.1초 정답 스포일러 방지를 위해 즉시 무음 무반응 복귀
             if (isFlipped) {
                 unflipCardSilently();
             }
 
-            // 2. 카드 데이터 갱신
             const currentCard = currentDeck[currentIndex];
             articleText.textContent = currentCard.article || "지문 내용이 없습니다.";
             reasonText.textContent = currentCard.reason || "상세 해설이 없습니다.";
@@ -294,19 +291,14 @@
             cardBadge.textContent = `No. ${currentCard.id || currentNum}`;
         }
 
-        // 핵심: 스포일러 방지 완벽 차단 함수
         function unflipCardSilently() {
             isFlipped = false;
-            
-            // 뒷면 스포일러 방지를 위해 텍스트 즉시 소거
             correctAnswerDisplay.textContent = "";
             reasonText.textContent = "";
 
-            // 트랜지션을 끄고 회전 해제
             flashcard.style.transition = 'none';
             flashcard.classList.remove('rotate-y-180');
             
-            // Reflow 강제 실행 후 다시 트랜지션 복원
             void flashcard.offsetHeight;
             flashcard.style.transition = '';
         }
@@ -333,7 +325,6 @@
 
             showResultBadge(isCorrect, userAns);
 
-            // 답 제출 시 자동으로 정답 및 해설면으로 뒤집기
             if (!isFlipped) {
                 isFlipped = true;
                 flashcard.classList.add('rotate-y-180');
@@ -367,7 +358,6 @@
         function setFilter(filterType) {
             currentFilter = filterType;
             
-            // 필터 버튼 스타일 전환
             const btnAll = document.getElementById('filterAll');
             const btnInc = document.getElementById('filterIncorrect');
             const btnUnans = document.getElementById('filterUnanswered');
@@ -417,17 +407,32 @@
             document.getElementById('countUnanswered').textContent = unansCount;
         }
 
-        // CSV 업로드 파싱 로직
+        // CSV 업로드 파싱 로직 (인코딩 자동 감지 적용)
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
 
             const reader = new FileReader();
             reader.onload = function(e) {
-                const content = e.target.result;
-                parseCSVData(content);
+                const buffer = e.target.result;
+                let text = "";
+
+                // UTF-8 디코딩 시도
+                const utf8Decoder = new TextDecoder('utf-8', { fatal: false });
+                const utf8Text = utf8Decoder.decode(buffer);
+
+                // UTF-8 디코딩 결과에 손상 문자(\uFFFD)가 포함되어 있으면 EUC-KR / CP949 (Windows ANSI)로 재시도
+                if (utf8Text.includes('\uFFFD')) {
+                    const eucKrDecoder = new TextDecoder('euc-kr');
+                    text = eucKrDecoder.decode(buffer);
+                } else {
+                    text = utf8Text;
+                }
+
+                parseCSVData(text);
             };
-            reader.readAsText(file, 'UTF-8');
+            
+            reader.readAsArrayBuffer(file);
         }
 
         function parseCSVData(text) {
@@ -439,11 +444,10 @@
                 const line = lines[i].trim();
                 if (!line) continue;
 
-                // 간단한 CSV 구분자 처리 (따옴표 고려)
                 const tokens = parseCSVLine(line);
                 if (tokens.length < 2) continue;
 
-                // 첫 번째 행이 헤더인 경우 건너뜀
+                // 헤더 검사
                 if (isHeader && (tokens[0].includes("지문") || tokens[0].includes("question") || tokens[0].toLowerCase().includes("article"))) {
                     isHeader = false;
                     continue;
@@ -466,7 +470,6 @@
 
             if (parsed.length > 0) {
                 rawDeck = parsed;
-                // 기존 풀이 이력 리셋
                 for (let key in userAnswers) delete userAnswers[key];
                 setFilter('ALL');
                 alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔습니다!`);
@@ -475,8 +478,9 @@
             }
         }
 
-        // CSV 큰따옴표 파싱 헬퍼
+        // CSV/TSV 구분자 및 큰따옴표 파싱 헬퍼
         function parseCSVLine(text) {
+            const delimiter = text.includes('\t') ? '\t' : ',';
             const result = [];
             let cur = '';
             let inQuotes = false;
@@ -485,7 +489,7 @@
                 const c = text[i];
                 if (c === '"') {
                     inQuotes = !inQuotes;
-                } else if (c === ',' && !inQuotes) {
+                } else if (c === delimiter && !inQuotes) {
                     result.push(cur);
                     cur = '';
                 } else {
