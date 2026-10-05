@@ -1,65 +1,520 @@
-function renderCard() {
-    if (currentDeck.length === 0) {
-        articleText.textContent = "조건에 해당하는 카드가 없습니다.";
-        reasonText.textContent = "";
-        progressText.textContent = "0 / 0";
-        progressBar.style.width = '0%';
-        btnAnswerO.disabled = true;
-        btnAnswerX.disabled = true;
-        return;
-    }
-
-    btnAnswerO.disabled = false;
-    btnAnswerX.disabled = false;
-
-    // 1. 카드가 뒤집혀 있다면 먼저 '빈 내용'으로 보이지 않게 처리 후 앞면으로 복귀
-    if (isFlipped) {
-        unflipCardSilently();
-    }
-
-    // 2. 앞면으로 완전히 돌아온 후 데이터를 세팅 (답 스포일러 완벽 방지)
-    const currentCard = currentDeck[currentIndex];
-    articleText.textContent = currentCard.article || "조문 내용이 없습니다.";
-    reasonText.textContent = currentCard.reason || "상세 사유가 없습니다.";
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>민법 OX 플래시카드 - 스마트 학습기</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    const rawAns = (currentCard.answer || "O").trim().toUpperCase();
-    correctAnswerDisplay.textContent = rawAns;
-    
-    if (rawAns === 'O') {
-        correctAnswerDisplay.className = "text-2xl font-black text-emerald-600";
-    } else {
-        correctAnswerDisplay.className = "text-2xl font-black text-rose-600";
-    }
+    <style>
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        .transform-style-3d {
+            transform-style: preserve-3d;
+        }
+        .backface-hidden {
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+        }
+        .rotate-y-180 {
+            transform: rotateY(180deg);
+        }
+        /* Hide scrollbars gracefully for description text */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center justify-between p-4 font-sans text-slate-800">
 
-    const key = getCardKey(currentCard);
-    const pastAnswer = userAnswers[key];
-    if (pastAnswer) {
-        showResultBadge(pastAnswer.isCorrect, pastAnswer.userAns);
-    } else {
-        resultBadge.className = "hidden";
-    }
+    <header class="w-full max-w-2xl mx-auto mb-4 flex flex-col sm:flex-row justify-between items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex items-center gap-3">
+            <div class="bg-indigo-600 text-white p-2.5 rounded-xl shadow-sm flex items-center justify-center">
+                <i class="fa-solid fa-book-bookmark text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-slate-900 tracking-tight">민법 OX 플래시카드</h1>
+                <p class="text-xs text-slate-500">판례 및 조문 암기 도우미</p>
+            </div>
+        </div>
 
-    btnPrev.disabled = currentIndex === 0;
-    btnNext.disabled = currentIndex === currentDeck.length - 1;
+        <!-- Controls: Upload & Template Download -->
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button onclick="downloadCSVTemplate()" title="CSV 템플릿 다운로드" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200">
+                <i class="fa-solid fa-file-csv text-indigo-600"></i>
+                <span>템플릿</span>
+            </button>
+            <label for="csvFileInput" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl cursor-pointer shadow-sm transition-all">
+                <i class="fa-solid fa-file-import"></i>
+                <span>CSV 업로드</span>
+            </label>
+            <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleCSVUpload(event)">
+        </div>
+    </header>
 
-    const total = currentDeck.length;
-    const currentNum = currentIndex + 1;
-    progressText.textContent = `${currentNum} / ${total}`;
-    progressBar.style.width = `${(currentNum / total) * 100}%`;
-}
+    <main class="w-full max-w-2xl mx-auto flex-1 flex flex-col justify-center">
+        
+        <!-- Filter & Progress Container -->
+        <div class="mb-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-3">
+            <!-- Filter Options -->
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-filter text-xs text-indigo-500"></i>
+                    <span class="text-xs font-bold text-slate-600">필터:</span>
+                </div>
+                <div class="flex items-center gap-1.5 overflow-x-auto text-xs font-medium">
+                    <button id="filterAll" onclick="setFilter('ALL')" class="px-3 py-1 rounded-lg bg-indigo-50 text-indigo-600 font-bold border border-indigo-200 transition-all">전체 (<span id="countAll">0</span>)</button>
+                    <button id="filterIncorrect" onclick="setFilter('INCORRECT')" class="px-3 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 transition-all">틀린 지문 (<span id="countIncorrect">0</span>)</button>
+                    <button id="filterUnanswered" onclick="setFilter('UNANSWERED')" class="px-3 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 transition-all">미풀이 (<span id="countUnanswered">0</span>)</button>
+                </div>
+            </div>
 
-function unflipCardSilently() {
-    isFlipped = false;
-    
-    // 카드가 돌아갈 때 뒷면 텍스트를 순간적으로 숨겨 스포일러 방지
-    correctAnswerDisplay.textContent = "";
-    reasonText.textContent = "";
+            <!-- Progress Info -->
+            <div class="flex justify-between items-center">
+                <span id="progressText" class="text-sm font-semibold text-slate-700">0 / 0</span>
+                <span id="resultBadge" class="hidden text-xs font-bold px-3 py-1 rounded-full shadow-sm"></span>
+            </div>
 
-    // 트랜지션을 끄고 즉시 앞면 상태로 리셋
-    flashcard.style.transition = 'none';
-    flashcard.classList.remove('rotate-y-180');
-    
-    // DOM 리플로우 강제 후 트랜지션 원복
-    void flashcard.offsetHeight;
-    flashcard.style.transition = '';
-}
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
+                <div id="progressBar" class="bg-indigo-600 h-full w-0 transition-all duration-300 rounded-full"></div>
+            </div>
+        </div>
+
+        <div class="perspective-1000 w-full h-80 cursor-pointer my-2" id="cardContainer">
+            <div id="flashcard" class="relative w-full h-full transform-style-3d transition-transform duration-500 rounded-3xl shadow-lg border border-slate-200/80 bg-white">
+                
+                <!-- Front Side -->
+                <div class="absolute inset-0 w-full h-full backface-hidden p-6 sm:p-8 flex flex-col justify-between items-center text-center bg-white rounded-3xl">
+                    <div class="flex justify-between items-center w-full">
+                        <span class="text-xs font-bold tracking-wider text-indigo-600 uppercase bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">지문</span>
+                        <span id="cardBadge" class="text-xs text-slate-400 font-medium"></span>
+                    </div>
+                    
+                    <p id="articleText" class="text-base sm:text-lg font-semibold text-slate-800 break-keep leading-relaxed my-auto max-h-48 overflow-y-auto no-scrollbar w-full px-2">
+                        질문을 불러오는 중입니다...
+                    </p>
+                    
+                    <div class="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                        <i class="fa-solid fa-rotate text-indigo-400"></i>
+                        <span>카드를 클릭하면 정답과 해설이 뒤집힙니다</span>
+                    </div>
+                </div>
+
+                <!-- Back Side -->
+                <div class="absolute inset-0 w-full h-full backface-hidden rotate-y-180 p-6 sm:p-8 flex flex-col justify-between items-center text-center bg-slate-900 text-white rounded-3xl shadow-inner">
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="text-xs font-bold tracking-wider text-slate-400 uppercase bg-slate-800 px-3 py-1 rounded-full border border-slate-700">정답 해설</span>
+                        <div id="correctAnswerDisplay" class="text-3xl font-black mt-1"></div>
+                    </div>
+                    
+                    <div class="overflow-y-auto max-h-36 my-auto w-full px-2 no-scrollbar">
+                        <p id="reasonText" class="text-sm sm:text-base text-slate-200 leading-relaxed break-keep font-medium"></p>
+                    </div>
+                    
+                    <div class="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
+                        <i class="fa-solid fa-rotate text-slate-400"></i>
+                        <span>카드를 클릭하면 지문으로 돌아갑니다</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- OX Answer Buttons -->
+        <div class="grid grid-cols-2 gap-4 mt-4">
+            <button id="btnAnswerO" onclick="submitAnswer('O')" class="py-4 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-extrabold text-2xl rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                <i class="fa-regular fa-circle text-2xl"></i>
+                <span>맞음 (O)</span>
+            </button>
+            <button id="btnAnswerX" onclick="submitAnswer('X')" class="py-4 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white font-extrabold text-2xl rounded-2xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2">
+                <i class="fa-solid fa-xmark text-2xl"></i>
+                <span>틀림 (X)</span>
+            </button>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div class="flex justify-between items-center mt-4 gap-4">
+            <button id="btnPrev" onclick="prevCard()" class="flex-1 py-3 bg-white border border-slate-300 hover:bg-slate-50 active:scale-95 text-slate-700 font-bold rounded-xl text-sm shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2">
+                <i class="fa-solid fa-chevron-left"></i>
+                <span>이전 카드</span>
+            </button>
+            <button id="btnResetCurrent" onclick="resetCurrentCardState()" class="px-3 py-3 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-600 font-semibold rounded-xl text-xs shadow-sm transition-all" title="이 카드의 학습 기록 초기화">
+                <i class="fa-solid fa-arrows-rotate"></i>
+            </button>
+            <button id="btnNext" onclick="nextCard()" class="flex-1 py-3 bg-white border border-slate-300 hover:bg-slate-50 active:scale-95 text-slate-700 font-bold rounded-xl text-sm shadow-sm transition-all disabled:opacity-40 disabled:pointer-events-none flex items-center justify-center gap-2">
+                <span>다음 카드</span>
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full max-w-2xl mx-auto mt-6 text-center text-xs text-slate-400">
+        민법 OX 플래시카드 &copy; Smart Study App
+    </footer>
+
+    <script>
+        // 기본 덱 데이터 (민법 핵심 판례 예시)
+        const defaultDeck = [
+            {
+                id: 1,
+                article: "독립한 부동산은 종물이 될 수 없다.",
+                answer: "X",
+                reason: "독립한 부동산(예: 별개의 건물)이라 하더라도 주물의 효용을 돕는 관계에 있다면 종물이 될 수 있습니다 (예: 독립된 창고, 정화조 시설 등)."
+            },
+            {
+                id: 2,
+                article: "구분건물의 전유부분에 대한 가압류 결정의 효력은 특별한 사정이 없는 한 그 대지권에 미치지 않는다.",
+                answer: "X",
+                reason: "대지사용권(대지권)은 전유부분의 종된 권리이므로 전유부분에 대한 가압류나 저당권의 효력은 당연히 대지권에도 미칩니다."
+            },
+            {
+                id: 3,
+                article: "부첩관계의 종료를 해제조건으로 하는 증여계약은 그 조건뿐만 아니라 그 계약자체도 무효이다.",
+                answer: "O",
+                reason: "부첩관계를 끝내면 증여를 취소한다는 조건은 불륜 관계 유지를 강요하는 불법조건이므로 조건뿐만 아니라 계약 전체가 무효가 됩니다."
+            },
+            {
+                id: 4,
+                article: "이중매매임을 알고 부동산을 매수한 것만으로 제2매매가 사회질서에 반하여 무효인 것은 아니다.",
+                answer: "O",
+                reason: "단순히 이중매매임을 알고 매수한(단순 악의) 것만으로는 무효가 되지 않으며, 제2매수인이 매도인의 배임행위에 '적극 가담'해야 무효가 됩니다."
+            },
+            {
+                id: 5,
+                article: "통정허위표시에 의한 급부는 특별한 사정이 없는 한 불법원인급여이다.",
+                answer: "X",
+                reason: "통정허위표시는 무효일 뿐 반사회질서 행위(민법 제103조)까지는 아니므로 불법원인급여가 아닙니다. 따라서 당사자 간 부당이득반환청구가 가능합니다."
+            }
+        ];
+
+        let rawDeck = [...defaultDeck]; // 전체 데이터 원본
+        let currentDeck = [...defaultDeck]; // 필터 적용된 데이터
+        let currentIndex = 0;
+        let isFlipped = false;
+        let currentFilter = 'ALL'; // 'ALL', 'INCORRECT', 'UNANSWERED'
+        const userAnswers = {}; // { [cardKey]: { isCorrect: boolean, userAns: 'O'|'X' } }
+
+        // DOM Elements
+        const flashcard = document.getElementById('flashcard');
+        const cardContainer = document.getElementById('cardContainer');
+        const articleText = document.getElementById('articleText');
+        const reasonText = document.getElementById('reasonText');
+        const correctAnswerDisplay = document.getElementById('correctAnswerDisplay');
+        const progressText = document.getElementById('progressText');
+        const progressBar = document.getElementById('progressBar');
+        const resultBadge = document.getElementById('resultBadge');
+        const cardBadge = document.getElementById('cardBadge');
+        const btnAnswerO = document.getElementById('btnAnswerO');
+        const btnAnswerX = document.getElementById('btnAnswerX');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+
+        function getCardKey(card) {
+            return card.id || `card-${card.article}`;
+        }
+
+        // 카드 뒤집기 토글
+        cardContainer.addEventListener('click', (e) => {
+            // 버튼 클릭 시에는 뒤집히지 않도록
+            if (e.target.closest('button')) return;
+
+            isFlipped = !isFlipped;
+            if (isFlipped) {
+                flashcard.classList.add('rotate-y-180');
+            } else {
+                flashcard.classList.remove('rotate-y-180');
+            }
+        });
+
+        function renderCard() {
+            updateFilterCounts();
+
+            if (currentDeck.length === 0) {
+                articleText.textContent = "해당하는 카드가 없습니다.";
+                reasonText.textContent = "";
+                correctAnswerDisplay.textContent = "";
+                progressText.textContent = "0 / 0";
+                progressBar.style.width = '0%';
+                cardBadge.textContent = "";
+                resultBadge.className = "hidden";
+                btnAnswerO.disabled = true;
+                btnAnswerX.disabled = true;
+                btnPrev.disabled = true;
+                btnNext.disabled = true;
+                return;
+            }
+
+            btnAnswerO.disabled = false;
+            btnAnswerX.disabled = false;
+
+            // 1. 카드가 뒤집혀 있는 상태라면 0.1초 정답 스포일러 방지를 위해 즉시 무음 무반응 복귀
+            if (isFlipped) {
+                unflipCardSilently();
+            }
+
+            // 2. 카드 데이터 갱신
+            const currentCard = currentDeck[currentIndex];
+            articleText.textContent = currentCard.article || "지문 내용이 없습니다.";
+            reasonText.textContent = currentCard.reason || "상세 해설이 없습니다.";
+            
+            const rawAns = (currentCard.answer || "O").trim().toUpperCase();
+            correctAnswerDisplay.textContent = rawAns === 'O' ? "O (옳은 지문)" : "X (틀린 지문)";
+            
+            if (rawAns === 'O') {
+                correctAnswerDisplay.className = "text-2xl font-black text-emerald-400";
+            } else {
+                correctAnswerDisplay.className = "text-2xl font-black text-rose-400";
+            }
+
+            const key = getCardKey(currentCard);
+            const pastAnswer = userAnswers[key];
+            if (pastAnswer) {
+                showResultBadge(pastAnswer.isCorrect, pastAnswer.userAns);
+            } else {
+                resultBadge.className = "hidden";
+            }
+
+            btnPrev.disabled = currentIndex === 0;
+            btnNext.disabled = currentIndex === currentDeck.length - 1;
+
+            const total = currentDeck.length;
+            const currentNum = currentIndex + 1;
+            progressText.textContent = `${currentNum} / ${total}`;
+            progressBar.style.width = `${(currentNum / total) * 100}%`;
+            cardBadge.textContent = `No. ${currentCard.id || currentNum}`;
+        }
+
+        // 핵심: 스포일러 방지 완벽 차단 함수
+        function unflipCardSilently() {
+            isFlipped = false;
+            
+            // 뒷면 스포일러 방지를 위해 텍스트 즉시 소거
+            correctAnswerDisplay.textContent = "";
+            reasonText.textContent = "";
+
+            // 트랜지션을 끄고 회전 해제
+            flashcard.style.transition = 'none';
+            flashcard.classList.remove('rotate-y-180');
+            
+            // Reflow 강제 실행 후 다시 트랜지션 복원
+            void flashcard.offsetHeight;
+            flashcard.style.transition = '';
+        }
+
+        function showResultBadge(isCorrect, userAns) {
+            resultBadge.classList.remove('hidden');
+            if (isCorrect) {
+                resultBadge.textContent = `정답! (내가 택한 답: ${userAns})`;
+                resultBadge.className = "text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200";
+            } else {
+                resultBadge.textContent = `오답 (내가 택한 답: ${userAns})`;
+                resultBadge.className = "text-xs font-bold px-3 py-1 rounded-full bg-rose-100 text-rose-700 border border-rose-200";
+            }
+        }
+
+        function submitAnswer(userAns) {
+            if (currentDeck.length === 0) return;
+            const currentCard = currentDeck[currentIndex];
+            const rawAns = (currentCard.answer || "O").trim().toUpperCase();
+            const isCorrect = userAns === rawAns;
+
+            const key = getCardKey(currentCard);
+            userAnswers[key] = { isCorrect, userAns };
+
+            showResultBadge(isCorrect, userAns);
+
+            // 답 제출 시 자동으로 정답 및 해설면으로 뒤집기
+            if (!isFlipped) {
+                isFlipped = true;
+                flashcard.classList.add('rotate-y-180');
+            }
+
+            updateFilterCounts();
+        }
+
+        function prevCard() {
+            if (currentIndex > 0) {
+                currentIndex--;
+                renderCard();
+            }
+        }
+
+        function nextCard() {
+            if (currentIndex < currentDeck.length - 1) {
+                currentIndex++;
+                renderCard();
+            }
+        }
+
+        function resetCurrentCardState() {
+            if (currentDeck.length === 0) return;
+            const currentCard = currentDeck[currentIndex];
+            const key = getCardKey(currentCard);
+            delete userAnswers[key];
+            renderCard();
+        }
+
+        function setFilter(filterType) {
+            currentFilter = filterType;
+            
+            // 필터 버튼 스타일 전환
+            const btnAll = document.getElementById('filterAll');
+            const btnInc = document.getElementById('filterIncorrect');
+            const btnUnans = document.getElementById('filterUnanswered');
+
+            const activeClass = "px-3 py-1 rounded-lg bg-indigo-50 text-indigo-600 font-bold border border-indigo-200 transition-all";
+            const inactiveClass = "px-3 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200 transition-all";
+
+            btnAll.className = filterType === 'ALL' ? activeClass : inactiveClass;
+            btnInc.className = filterType === 'INCORRECT' ? activeClass : inactiveClass;
+            btnUnans.className = filterType === 'UNANSWERED' ? activeClass : inactiveClass;
+
+            applyFilter();
+        }
+
+        function applyFilter() {
+            if (currentFilter === 'ALL') {
+                currentDeck = [...rawDeck];
+            } else if (currentFilter === 'INCORRECT') {
+                currentDeck = rawDeck.filter(card => {
+                    const ans = userAnswers[getCardKey(card)];
+                    return ans && !ans.isCorrect;
+                });
+            } else if (currentFilter === 'UNANSWERED') {
+                currentDeck = rawDeck.filter(card => {
+                    const ans = userAnswers[getCardKey(card)];
+                    return !ans;
+                });
+            }
+
+            currentIndex = 0;
+            renderCard();
+        }
+
+        function updateFilterCounts() {
+            document.getElementById('countAll').textContent = rawDeck.length;
+
+            let incCount = 0;
+            let unansCount = 0;
+
+            rawDeck.forEach(card => {
+                const ans = userAnswers[getCardKey(card)];
+                if (!ans) unansCount++;
+                else if (!ans.isCorrect) incCount++;
+            });
+
+            document.getElementById('countIncorrect').textContent = incCount;
+            document.getElementById('countUnanswered').textContent = unansCount;
+        }
+
+        // CSV 업로드 파싱 로직
+        function handleCSVUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                parseCSVData(content);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function parseCSVData(text) {
+            const lines = text.split(/\r\n|\n/);
+            const parsed = [];
+            let isHeader = true;
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                if (!line) continue;
+
+                // 간단한 CSV 구분자 처리 (따옴표 고려)
+                const tokens = parseCSVLine(line);
+                if (tokens.length < 2) continue;
+
+                // 첫 번째 행이 헤더인 경우 건너뜀
+                if (isHeader && (tokens[0].includes("지문") || tokens[0].includes("question") || tokens[0].toLowerCase().includes("article"))) {
+                    isHeader = false;
+                    continue;
+                }
+                isHeader = false;
+
+                const article = tokens[0] ? tokens[0].trim() : "";
+                const answer = tokens[1] ? tokens[1].trim().toUpperCase() : "O";
+                const reason = tokens[2] ? tokens[2].trim() : "해설이 제공되지 않았습니다.";
+
+                if (article) {
+                    parsed.push({
+                        id: parsed.length + 1,
+                        article,
+                        answer,
+                        reason
+                    });
+                }
+            }
+
+            if (parsed.length > 0) {
+                rawDeck = parsed;
+                // 기존 풀이 이력 리셋
+                for (let key in userAnswers) delete userAnswers[key];
+                setFilter('ALL');
+                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔습니다!`);
+            } else {
+                alert("CSV 파일에서 유효한 문제 데이터를 찾지 못했습니다. 템플릿 양식을 확인해 주세요.");
+            }
+        }
+
+        // CSV 큰따옴표 파싱 헬퍼
+        function parseCSVLine(text) {
+            const result = [];
+            let cur = '';
+            let inQuotes = false;
+
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (c === '"') {
+                    inQuotes = !inQuotes;
+                } else if (c === ',' && !inQuotes) {
+                    result.push(cur);
+                    cur = '';
+                } else {
+                    cur += c;
+                }
+            }
+            result.push(cur);
+            return result.map(str => str.replace(/^"|"$/g, '').replace(/""/g, '"'));
+        }
+
+        // CSV 템플릿 다운로드
+        function downloadCSVTemplate() {
+            const csvContent = "\uFEFF지문,정답,해설\n" +
+                "\"독립한 부동산은 종물이 될 수 없다.\",X,\"독립된 건물이라도 주물의 효용을 돕는다면 종물이 될 수 있습니다.\"\n" +
+                "\"부첩관계의 종료를 해제조건으로 하는 증여계약은 무효이다.\",O,\"불륜관계 유지를 강요하는 불법조건이므로 무효입니다.\"\n" +
+                "\"이중매매임을 알고 매수한 것만으로 무효가 되지는 않는다.\",O,\"단순 악의만으로는 유효하며, 적극 가담해야 무효가 됩니다.\"";
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", "민법_OX_플래시카드_템플릿.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // 초기 시작
+        renderCard();
+    </script>
+</body>
+</html>
