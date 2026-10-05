@@ -45,8 +45,12 @@
             </div>
         </div>
 
-        <!-- Controls: Upload & Template Download -->
-        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+        <!-- Controls: Reset & Upload & Template Download -->
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
+            <button onclick="resetToDefaultDeck()" title="기본 문제 덱으로 초기화" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl transition-all border border-rose-200">
+                <i class="fa-solid fa-rotate-left"></i>
+                <span>초기화</span>
+            </button>
             <button onclick="downloadCSVTemplate()" title="CSV 템플릿 다운로드" class="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all border border-slate-200">
                 <i class="fa-solid fa-file-csv text-indigo-600"></i>
                 <span>템플릿</span>
@@ -160,6 +164,9 @@
     </footer>
 
     <script>
+        const STORAGE_KEY_DECK = "civil_law_quiz_deck";
+        const STORAGE_KEY_ANSWERS = "civil_law_quiz_answers";
+
         const defaultDeck = [
             {
                 id: 1,
@@ -193,12 +200,12 @@
             }
         ];
 
-        let rawDeck = [...defaultDeck];
-        let currentDeck = [...defaultDeck];
+        let rawDeck = loadStoredDeck();
+        let currentDeck = [...rawDeck];
         let currentIndex = 0;
         let isFlipped = false;
         let currentFilter = 'ALL';
-        const userAnswers = {};
+        const userAnswers = loadStoredAnswers();
 
         const flashcard = document.getElementById('flashcard');
         const cardContainer = document.getElementById('cardContainer');
@@ -213,6 +220,56 @@
         const btnAnswerX = document.getElementById('btnAnswerX');
         const btnPrev = document.getElementById('btnPrev');
         const btnNext = document.getElementById('btnNext');
+
+        // 로컬스토리지 불러오기 헬퍼
+        function loadStoredDeck() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY_DECK);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                }
+            } catch(e) {
+                console.error("저장된 문제 덱 로드 실패:", e);
+            }
+            return [...defaultDeck];
+        }
+
+        function loadStoredAnswers() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY_ANSWERS);
+                if (saved) return JSON.parse(saved);
+            } catch(e) {
+                console.error("저장된 답안 히스토리 로드 실패:", e);
+            }
+            return {};
+        }
+
+        function saveDeckToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_DECK, JSON.stringify(rawDeck));
+            } catch(e) {
+                console.error("문제 덱 저장 실패:", e);
+            }
+        }
+
+        function saveAnswersToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY_ANSWERS, JSON.stringify(userAnswers));
+            } catch(e) {
+                console.error("답안 히스토리 저장 실패:", e);
+            }
+        }
+
+        function resetToDefaultDeck() {
+            if (confirm("업로드한 문제와 풀이 기록을 모두 초기화하고 기본 5개 문제 덱으로 되돌리시겠습니까?")) {
+                localStorage.removeItem(STORAGE_KEY_DECK);
+                localStorage.removeItem(STORAGE_KEY_ANSWERS);
+                rawDeck = [...defaultDeck];
+                for (let key in userAnswers) delete userAnswers[key];
+                setFilter('ALL');
+            }
+        }
 
         function getCardKey(card) {
             return card.id || `card-${card.article}`;
@@ -316,6 +373,7 @@
 
             const key = getCardKey(currentCard);
             userAnswers[key] = { isCorrect, userAns };
+            saveAnswersToStorage();
 
             showResultBadge(isCorrect, userAns);
 
@@ -346,6 +404,7 @@
             const currentCard = currentDeck[currentIndex];
             const key = getCardKey(currentCard);
             delete userAnswers[key];
+            saveAnswersToStorage();
             renderCard();
         }
 
@@ -401,7 +460,6 @@
             document.getElementById('countUnanswered').textContent = unansCount;
         }
 
-        // CSV 업로드 파싱 로직 (인코딩 자동 감지 보완)
         function handleCSVUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -412,11 +470,9 @@
                 let text = "";
 
                 try {
-                    // 1. Strict UTF-8 디코딩 시도
                     const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
                     text = utf8Decoder.decode(buffer);
                 } catch (err) {
-                    // 2. UTF-8 디코딩 실패 시 EUC-KR / CP949 디코딩
                     try {
                         const eucKrDecoder = new TextDecoder('euc-kr');
                         text = eucKrDecoder.decode(buffer);
@@ -467,8 +523,13 @@
             if (parsed.length > 0) {
                 rawDeck = parsed;
                 for (let key in userAnswers) delete userAnswers[key];
+                
+                // 브라우저 로컬스토리지에 업로드한 덱과 정답 히스토리 동기화 저장
+                saveDeckToStorage();
+                saveAnswersToStorage();
+
                 setFilter('ALL');
-                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔습니다!`);
+                alert(`성공적으로 ${parsed.length}개의 OX 문제를 불러왔으며 브라우저에 저장되었습니다!`);
             } else {
                 alert("CSV 파일에서 유효한 문제 데이터를 찾지 못했습니다. 템플릿 양식을 확인해 주세요.");
             }
